@@ -2,6 +2,9 @@ name: Send weekly admissions brief
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "30 8 * * 5"
+      timezone: "America/New_York"
 
 permissions:
   contents: read
