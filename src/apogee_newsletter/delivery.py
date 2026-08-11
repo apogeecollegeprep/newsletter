@@ -89,8 +89,7 @@ def _story_html(story: Story) -> str:
         )
     return f"""
       <article style="padding:20px 0;border-bottom:1px solid #e7e9ee">
-        <p style="margin:0 0 6px;color:#1F6C87;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase">{html.escape(story.category)}</p>
-        <h2 style="margin:0 0 6px;color:#050F1F;font-size:20px;line-height:1.3"><a href="{html.escape(story.url, quote=True)}" style="color:#050F1F;text-decoration:none">{html.escape(story.headline)}</a></h2>
+        <h3 style="margin:0 0 6px;color:#050F1F;font-size:20px;line-height:1.3"><a href="{html.escape(story.url, quote=True)}" style="color:#050F1F;text-decoration:none">{html.escape(story.headline)}</a></h3>
         <p style="margin:0 0 10px;color:#6b7280;font-size:13px">{html.escape(story.source)}</p>
         <p style="margin:0;color:#191919;font-size:15px;line-height:1.65">{html.escape(story.summary)}</p>
         {impact}
@@ -99,10 +98,25 @@ def _story_html(story: Story) -> str:
     """
 
 
+def _grouped_news_html(stories: list[Story]) -> str:
+    grouped: dict[str, list[Story]] = {}
+    for story in stories:
+        grouped.setdefault(story.category, []).append(story)
+    return "".join(
+        f"""
+          <section style="margin-top:26px">
+            <h2 style="margin:0;padding:0 0 8px;border-bottom:3px solid #F1A70F;color:#1F6C87;font-size:15px;line-height:1.3;letter-spacing:.08em;text-transform:uppercase">{html.escape(category)}</h2>
+            {''.join(_story_html(story) for story in category_stories)}
+          </section>
+        """
+        for category, category_stories in grouped.items()
+    )
+
+
 def render_email(stories: list[Story], *, monthly: bool = False) -> str:
-    title = "Apogee Admissions Monthly" if monthly else "Apogee Admissions Weekly Brief"
+    title = "Apogee Ascent"
     eyebrow = "MONTHLY NEWSLETTER DRAFT" if monthly else "THIS WEEK IN COLLEGE ADMISSIONS"
-    news = "".join(_story_html(story) for story in stories)
+    news = _grouped_news_html(stories)
     human_sections = ""
     if monthly:
         human_sections = """
@@ -125,7 +139,6 @@ def render_email(stories: list[Story], *, monthly: bool = False) -> str:
       <tr><td style="padding:36px 36px 30px;background:#050F1F;border-top:5px solid #F1A70F">
         <p style="margin:0 0 10px;color:#F1A70F;font-size:12px;font-weight:700;letter-spacing:.12em">{eyebrow}</p>
         <h1 style="margin:0;color:#ffffff;font-size:30px;line-height:1.2">{title}</h1>
-        <p style="margin:12px 0 0;color:#dce2ea;font-size:15px;line-height:1.5">Neutral, practical updates for students, families, and the Apogee coaching team.</p>
       </td></tr>
       <tr><td style="padding:10px 36px 32px">
         {news}
@@ -239,10 +252,10 @@ def deliver(*, monthly: bool, dry_run: bool) -> dict[str, Any]:
         raise RuntimeError("No eligible, fully summarized Airtable stories are available for this issue")
 
     now = datetime.now(UTC)
-    issue_type = "Monthly Newsletter" if monthly else "Weekly Brief"
+    issue_type = "Apogee Ascent Monthly" if monthly else "Apogee Ascent"
     subject = (
-        f"Apogee Admissions Monthly — {now:%B %Y}"
-        if monthly else f"Apogee Admissions Weekly Brief — {now:%B} {now.day}, {now.year}"
+        f"Apogee Ascent — {now:%B %Y}"
+        if monthly else f"Apogee Ascent — {now:%B} {now.day}, {now.year}"
     )
     html_body = render_email(stories, monthly=monthly)
     if dry_run:
