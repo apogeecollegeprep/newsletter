@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "apogee-admissions-newsletter"
+version = "0.1.0"
+description = "Inoreader-to-Airtable candidate pipeline for Apogee College Prep"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<9"]
+
+[project.scripts]
+sync-newsletter = "apogee_newsletter.sync:main"
+send-weekly-brief = "apogee_newsletter.delivery:weekly_main"
+create-monthly-draft = "apogee_newsletter.delivery:monthly_main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
