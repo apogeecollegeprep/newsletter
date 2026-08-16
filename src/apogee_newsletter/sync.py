@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import os
 import re
@@ -88,6 +89,17 @@ CATEGORY_TERMS: tuple[tuple[str, tuple[str, ...]], ...] = (
             "application requirement",
             "application deadline",
             "supplemental essay",
+            "supplemental writing",
+            "writing supplement",
+            "college supplement",
+            "school-specific essay",
+            "school specific essay",
+            "short-answer question",
+            "short answer question",
+            "essay requirement",
+            "application writing requirement",
+            "why us essay",
+            "why college essay",
             "get admitted",
             "getting admitted",
             "college admission",
@@ -107,6 +119,61 @@ CATEGORY_TERMS: tuple[tuple[str, tuple[str, ...]], ...] = (
             "applications fell",
             "record applications",
         ),
+    ),
+)
+
+# Investigative admissions stories often use language about cheating or fraud
+# instead of conventional policy terms. These are strong applicant-facing
+# signals when they appear alongside an application/admissions reference.
+ADMISSIONS_INTEGRITY_TERMS = (
+    "admissions fraud",
+    "application fraud",
+    "fraud squad",
+    "application cheating",
+    "cheating on applications",
+    "dishonest application",
+    "dishonest submission",
+    "falsified application",
+    "false application claim",
+    "misrepresented application",
+    "application verification",
+    "verify applications",
+    "vetting applications",
+    "vet every admitted student",
+    "application accuracy",
+    "ai fueled cheating",
+    "ai-fueled cheating",
+)
+
+# Body matching is deliberately stricter than headline matching. Only the
+# first few article paragraphs are inspected, avoiding feed footers, navigation
+# and unrelated-story modules that frequently contain generic admissions words.
+LEAD_CATEGORY_TERMS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("Glimpse / Applicant Video", ("glimpse video", "applicant video", "video supplement")),
+    (
+        "Financial Aid",
+        ("fafsa deadline", "pell grant eligibility", "financial aid application", "state grant award", "aid award was reduced"),
+    ),
+    (
+        "College Financial Health",
+        ("college will close", "university will close", "teach-out plan", "declared financial emergency", "lost accreditation"),
+    ),
+    (
+        "Admissions Policy",
+        (
+            "applicants will be required",
+            "applicants will no longer be required",
+            "applicants must submit",
+            "changed its application requirements",
+            "changed its admissions policy",
+            "application verification",
+            "vetting applications",
+            "dishonest submissions",
+        ),
+    ),
+    (
+        "Application Trends",
+        ("applications increased", "applications decreased", "applicant pool grew", "acceptance rate fell", "admitted less than"),
     ),
 )
 
@@ -151,6 +218,30 @@ LOW_ACTIONABILITY_TERMS = (
     "hidden helpers",
 )
 
+# A modest regional tie-breaker based on the application counts supplied by
+# Apogee. It never overrides topical relevance; it only separates otherwise
+# comparable stories. Higher values represent greater Apogee audience interest.
+SOUTHEAST_SCHOOL_PRIORITIES: tuple[tuple[int, tuple[str, ...]], ...] = (
+    (3, ("university of georgia", "uga today", "red black", "news uga edu")),
+    (3, ("university of south carolina", "daily gamecock", "sc edu uofsc")),
+    (3, ("university of alabama", "ua news", "crimson white", "news ua edu")),
+    (3, ("georgia institute of technology", "georgia tech", "technique", "gatech edu", "nique net")),
+    (2, ("georgia state university", "news gsu edu", "georgiastatesignal com")),
+    (2, ("kennesaw state university", "kennesaw edu", "ksusentinel com")),
+    (2, ("florida state university", "fsu news", "fsview", "news fsu edu", "fsunews com")),
+    (2, ("georgia college state university", "bobcat multimedia", "gcsu edu")),
+    (2, ("auburn university", "auburn wire", "auburn plainsman", "theplainsman com")),
+    (2, ("university of tennessee knoxville", "ut news", "daily beacon", "news utk edu")),
+    (2, ("university of florida", "uf news", "florida alligator", "news ufl edu", "alligator org")),
+    (1, ("college of charleston", "college today", "cisternyard", "cofc edu")),
+    (1, ("clemson university", "clemson news", "the tiger clemson", "clemson edu", "thetigercu com")),
+    (1, ("georgia southern university", "george anne", "georgiasouthern edu")),
+    (1, ("university of kentucky", "uknow", "kentucky kernel", "uky edu", "kykernel com")),
+    (1, ("university of mississippi", "ole miss", "daily mississippian", "olemiss edu", "thedmonline com")),
+    (1, ("emory university", "emory news", "emory wheel", "emory edu", "emorywheel com")),
+    (1, ("elon university", "elon news network", "elon edu", "elonnewsnetwork com")),
+)
+
 
 class ConfigurationError(RuntimeError):
     pass
@@ -186,6 +277,31 @@ def normalize_text(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", value.casefold()).strip()
 
 
+def extract_lead_text(content: str, *, paragraphs: int = 3, maximum: int = 2400) -> str:
+    """Extract a bounded article lead from HTML or plain-text feed content."""
+    cleaned = re.sub(r"<(script|style)\b[^>]*>.*?</\1>", " ", content, flags=re.IGNORECASE | re.DOTALL)
+    paragraph_html = re.findall(r"<p\b[^>]*>(.*?)</p>", cleaned, flags=re.IGNORECASE | re.DOTALL)
+    selected = paragraph_html[:paragraphs] if paragraph_html else [cleaned]
+    text = " ".join(re.sub(r"<[^>]+>", " ", value) for value in selected)
+    text = html.unescape(re.sub(r"\s+", " ", text)).strip()
+    return text[:maximum]
+
+
+def admissions_integrity_priority(title: str, content: str = "") -> int:
+    combined = normalize_text(f"{title} {extract_lead_text(content)}")
+    has_context = any(term in combined for term in ("admission", "application", "applicant"))
+    return int(has_context and any(normalize_text(term) in combined for term in ADMISSIONS_INTEGRITY_TERMS))
+
+
+def southeast_school_priority(title: str, source: str = "", url: str = "") -> int:
+    """Return Apogee's regional tie-break priority for a school-related story."""
+    text = normalize_text(f"{title} {source} {url}")
+    for priority, aliases in SOUTHEAST_SCHOOL_PRIORITIES:
+        if any(alias in text for alias in aliases):
+            return priority
+    return 0
+
+
 def canonicalize_url(value: str) -> str:
     parts = urlsplit(value.strip())
     host = (parts.hostname or "").casefold()
@@ -204,19 +320,24 @@ def canonicalize_url(value: str) -> str:
 
 
 def classify_category(title: str, content: str = "") -> str | None:
-    # Headlines are the reliable topical signal. Feed bodies commonly include
-    # navigation and related-story text that otherwise creates false matches.
-    text = normalize_text(title)
-    if any(normalize_text(term) in text for term in EXCLUDED_TERMS):
+    title_text = normalize_text(title)
+    lead_text = normalize_text(extract_lead_text(content))
+    combined = f"{title_text} {lead_text}".strip()
+    if any(normalize_text(term) in title_text for term in EXCLUDED_TERMS):
         return None
-    if any(normalize_text(term) in text for term in INTERNATIONAL_ONLY_TERMS):
+    if any(normalize_text(term) in combined for term in INTERNATIONAL_ONLY_TERMS):
         return None
-    if any(normalize_text(term) in text for term in GRADUATE_ONLY_TERMS):
+    if any(normalize_text(term) in combined for term in GRADUATE_ONLY_TERMS):
         return None
-    if any(normalize_text(term) in text for term in LOW_ACTIONABILITY_TERMS):
+    if any(normalize_text(term) in title_text for term in LOW_ACTIONABILITY_TERMS):
         return None
+    if admissions_integrity_priority(title, content):
+        return "Admissions Policy"
     for category, terms in CATEGORY_TERMS:
-        if any(normalize_text(term) in text for term in terms):
+        if any(normalize_text(term) in title_text for term in terms):
+            return category
+    for category, terms in LEAD_CATEGORY_TERMS:
+        if any(normalize_text(term) in lead_text for term in terms):
             return category
     return None
 
@@ -475,6 +596,8 @@ def candidate_from_item(item: dict[str, Any], sources: list[Source]) -> Candidat
         "Financial Aid": 4,
         "College Financial Health": 4,
     }.get(category, 3)
+    if admissions_integrity_priority(title, summary):
+        relevance = 6
     return Candidate(
         headline=title,
         url=url,
@@ -517,6 +640,7 @@ def sync(*, dry_run: bool = False) -> dict[str, int]:
     candidates.sort(
         key=lambda candidate: (
             candidate.relevance_score,
+            southeast_school_priority(candidate.headline, candidate.source, candidate.url),
             candidate.source_quality,
             candidate.published_at,
         ),
