@@ -3,7 +3,7 @@ name: Send weekly admissions brief
 on:
   workflow_dispatch:
   schedule:
-    - cron: "30 8 * * 5"
+    - cron: "30 8 * * 1"
       timezone: "America/New_York"
 
 permissions:
@@ -32,6 +32,7 @@ jobs:
           AIRTABLE_CANDIDATES_TABLE_ID: tblZkI1A7D0Mgz98Y
           AIRTABLE_ISSUES_TABLE_ID: tblsnPXpizZA9SVfO
           MAILERLITE_WEEKLY_GROUP_NAME: Weekly Admissions Brief Test
+          MAILERLITE_WEEKLY_RECIPIENTS: terri@apogeecollegeprep.com,danielle@apogeecollegeprep.com,sue@apogeecollegeprep.com
           MAILERLITE_FROM_EMAIL: adam@apogeecollegeprep.com
           MAILERLITE_FROM_NAME: Apogee College Prep
         run: send-weekly-brief
