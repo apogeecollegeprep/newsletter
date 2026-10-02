@@ -1,0 +1,62 @@
+name: Read selected September news
+
+on:
+  push:
+    branches:
+      - codex-october-mailerlite-draft-20260929
+
+permissions:
+  contents: read
+
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    env:
+      AIRTABLE_TOKEN: ${{ secrets.AIRTABLE }}
+    steps:
+      - name: Read selected September records
+        shell: python
+        run: |
+          import json
+          import os
+          import urllib.parse
+          import urllib.request
+
+          base = "appjM2J9lAfpLyfd7"
+          table = "tblZkI1A7D0Mgz98Y"
+          fields = [
+              "Headline", "URL", "Source", "Published At", "Category",
+              "Status", "Neutral Summary", "Applicant Impact", "Selected",
+              "Editorial Notes",
+          ]
+          params = [("pageSize", "100")]
+          params.extend(("fields[]", field) for field in fields)
+          records = []
+          offset = None
+          while True:
+              query = list(params)
+              if offset:
+                  query.append(("offset", offset))
+              url = (
+                  "https://api.airtable.com/v0/"
+                  + base + "/" + table + "?" + urllib.parse.urlencode(query)
+              )
+              request = urllib.request.Request(
+                  url,
+                  headers={"Authorization": "Bearer " + os.environ["AIRTABLE_TOKEN"]},
+              )
+              with urllib.request.urlopen(request, timeout=60) as response:
+                  payload = json.load(response)
+              records.extend(payload.get("records", []))
+              offset = payload.get("offset")
+              if not offset:
+                  break
+
+          selected = []
+          for record in records:
+              item = record.get("fields", {})
+              published = str(item.get("Published At", ""))
+              if item.get("Selected") and published.startswith("2026-09"):
+                  selected.append({"id": record["id"], **item})
+          selected.sort(key=lambda item: item.get("Published At", ""))
+          print("SELECTED_NEWS=" + json.dumps(selected, ensure_ascii=False))
